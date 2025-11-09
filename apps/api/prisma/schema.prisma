@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  RIDER
+  ADMIN
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELED
+}
+
+enum PaymentStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum Channel {
+  PUSH
+  SMS
+  EMAIL
+}
+
+model User {
+  id           String   @id @default(cuid())
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String
+  role         UserRole
+  firstName    String
+  lastName     String
+  isVerified   Boolean  @default(false)
+  twoFAEnabled Boolean  @default(false)
+  addresses    Address[]
+  mealRequests MealRequest[] @relation("MealRequestCustomer")
+  orders       Order[]       @relation("OrderCustomer")
+  notifications Notification[] @relation("UserNotifications")
+  vendor       Vendor?
+  rider        Rider?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Address {
+  id      String  @id @default(cuid())
+  userId  String
+  label   String?
+  line1   String
+  line2   String?
+  city    String
+  state   String
+  country String
+  lat     Float
+  lng     Float
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model Vendor {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  displayName   String
+  ratingAvg     Float    @default(0)
+  ratingCount   Int      @default(0)
+  isVerified    Boolean  @default(false)
+  kmServiceArea Float    @default(5)
+  menus         Menu[]
+  offers        Offer[]
+  orders        Order[]
+  user          User     @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Menu {
+  id        String    @id @default(cuid())
+  vendorId  String
+  title     String
+  items     MenuItem[]
+  vendor    Vendor    @relation(fields: [vendorId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model MenuItem {
+  id           String  @id @default(cuid())
+  menuId       String
+  name         String
+  nameLocal    String?
+  description  String?
+  ingredients  String?
+  priceKobo    Int
+  photoUrl     String?
+  cuisineTag   String?
+  prepMinutes  Int?
+  isAvailable  Boolean @default(true)
+  menu         Menu    @relation(fields: [menuId], references: [id])
+
+  @@index([name])
+}
+
+model MealRequest {
+  id              String   @id @default(cuid())
+  customerId      String
+  category        String
+  budgetMinKobo   Int
+  budgetMaxKobo   Int
+  desiredAt       DateTime?
+  deliveryLat     Float
+  deliveryLng     Float
+  addressLine     String
+  notes           String?
+  expiresAt       DateTime
+  maxVendorOffers Int      @default(10)
+  customer        User     @relation("MealRequestCustomer", fields: [customerId], references: [id])
+  offers          Offer[]
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Offer {
+  id            String      @id @default(cuid())
+  mealRequestId String
+  vendorId      String
+  priceKobo     Int
+  details       String?
+  prepMinutes   Int?
+  slotFrom      DateTime?
+  slotTo        DateTime?
+  status        OfferStatus @default(PENDING)
+  isCompetitive Boolean     @default(false)
+  mealRequest   MealRequest @relation(fields: [mealRequestId], references: [id])
+  vendor        Vendor      @relation(fields: [vendorId], references: [id])
+  orders        Order[]     @relation("OfferOrders")
+  createdAt     DateTime    @default(now())
+
+  @@index([mealRequestId, vendorId])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  customerId    String
+  vendorId      String
+  offerId       String?
+  menuItemId    String?
+  amountKobo    Int
+  status        OrderStatus @default(PENDING)
+  deliveryLat   Float
+  deliveryLng   Float
+  etaMinutes    Int?
+  riderId       String?
+  paymentId     String?
+  customer      User        @relation("OrderCustomer", fields: [customerId], references: [id])
+  vendor        Vendor      @relation(fields: [vendorId], references: [id])
+  offer         Offer?      @relation("OfferOrders", fields: [offerId], references: [id])
+  rider         Rider?      @relation(fields: [riderId], references: [id])
+  events        OrderEvent[]
+  payment       Payment?    @relation("OrderPayment")
+  review        Review?     @relation("OrderReview")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([status])
+}
+
+model OrderEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  type      String
+  meta      Json?
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  @@index([orderId, createdAt])
+}
+
+model Rider {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  ratingAvg   Float   @default(0)
+  ratingCount Int     @default(0)
+  vehicleType String?
+  provider    String?
+  user        User    @relation(fields: [userId], references: [id])
+  locations   RiderLocation[]
+  orders      Order[]
+}
+
+model RiderLocation {
+  id         String   @id @default(cuid())
+  riderId    String
+  lat        Float
+  lng        Float
+  recordedAt DateTime @default(now())
+  rider      Rider    @relation(fields: [riderId], references: [id])
+
+  @@index([riderId, recordedAt])
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  orderId    String        @unique
+  provider   String
+  status     PaymentStatus
+  reference  String        @unique
+  amountKobo Int
+  currency   String        @default("NGN")
+  rawPayload Json?
+  createdAt  DateTime      @default(now())
+  order      Order         @relation("OrderPayment", fields: [orderId], references: [id])
+}
+
+model Review {
+  id        String  @id @default(cuid())
+  orderId   String  @unique
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  order     Order   @relation("OrderReview", fields: [orderId], references: [id])
+}
+
+model Notification {
+  id     String  @id @default(cuid())
+  userId String
+  channel Channel
+  title  String
+  body   String
+  meta   Json?
+  sentAt DateTime?
+  user   User    @relation("UserNotifications", fields: [userId], references: [id])
+
+  @@index([userId, sentAt])
+}

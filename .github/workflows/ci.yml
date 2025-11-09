@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: pocho
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      meilisearch:
+        image: getmeili/meilisearch:v1.7
+        env:
+          MEILI_MASTER_KEY: masterKey
+        ports:
+          - 7700:7700
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pocho
+      MEILISEARCH_HOST: http://localhost:7700
+      MEILISEARCH_API_KEY: masterKey
+      JWT_ACCESS_SECRET: test
+      JWT_REFRESH_SECRET: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm install
+      - run: npm run db:generate
+        working-directory: apps/api
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run test:e2e
+      - run: npm run build

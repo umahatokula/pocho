@@ -1,0 +1,9 @@
+node_modules
+.dist
+coverage
+.env
+.env.*
+.prisma
+.DS_Store
+npm-debug.log
+.husky/_
